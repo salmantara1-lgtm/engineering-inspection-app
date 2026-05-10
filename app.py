@@ -8,7 +8,7 @@ import json
 import os
 
 # --- الإعدادات الأساسية للصفحة ---
-st.set_page_config(page_title="نظام ACE للاستلامات الهندسية", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="نظام ACE للاستلامات الهندسية", page_icon="🏗️", layout="centered")
 
 # ==========================================
 # نظام الترقيم التلقائي (قاعدة البيانات)
@@ -36,7 +36,7 @@ def update_db(project, stage):
         json.dump(db, f, ensure_ascii=False, indent=4)
 
 # ==========================================
-# قاعدة بيانات الاستلامات (12+ نموذج من PDF)
+# قاعدة بيانات الاستلامات (12+ نموذج)
 # ==========================================
 INSPECTIONS_DATA = {
     "أعمال الحفر": ["مراجعة الميزانية الشبكية للأرض", "مطابقة الإحداثيات مع حدود المبنى", "مراجعة منسوب التأسيس مع الروبير", "تطهير واستواء قاع الحفر", "مطابقة التربة لتقرير الجسات"],
@@ -53,11 +53,10 @@ INSPECTIONS_DATA = {
     "أعمال الردم": ["جودة تربة الردم الموردة", "الردم على طبقات (25-30 سم)", "الرش بالماء والدمك جيداً", "اختبارات التربة لكل طبقة"]
 }
 
-# --- دالة إنشاء ملف Word (عكس ترتيب الجداول) ---
+# --- دالة إنشاء ملف Word (الترتيب: الملاحظات -> النتيجة -> البند) ---
 def create_docx(data):
     doc = Document()
     
-    # الترويسة
     header = doc.add_heading(f"نموذج فحص واستلام - {data['inspection_type']}", level=1)
     header.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
@@ -127,7 +126,7 @@ stage = st.selectbox("🎯 اختر مرحلة الاستلام:", list(INSPECTI
 next_no = get_next_id(proj, stage)
 st.success(f"الرقم التلقائي القادم لهذه المرحلة: **{next_no}**")
 
-tab1, tab2, tab3 = st.tabs(["📋 بنود الفحص والملاحظات", "📸 التوثيق الصوري", "💾 إصدار التقرير"])
+tab1, tab2, tab3 = st.tabs(["📋 بنود الفحص", "📸 التوثيق الصوري", "💾 الاعتماد والإصدار"])
 
 with tab1:
     st.subheader("تحقق ما قبل الاستلام (إداري)")
@@ -136,21 +135,30 @@ with tab1:
     st.markdown("---")
     st.subheader("الفحص الفني الدقيق")
     t_results = {}
+    
+    # التعديل الجديد ليكون متوافقاً ومريحاً جداً لشاشة الجوال
     for item in INSPECTIONS_DATA[stage]:
-        col1, col2 = st.columns([1, 2])
-        with col1: res = st.radio(f"نتيجة {item}", ["مطابق", "غير مطابق", "غير مطبق"], horizontal=True, label_visibility="collapsed")
-        with col2: note = st.text_input(f"ملاحظة على {item}", placeholder="أضف ملاحظة للبند...", label_visibility="collapsed")
+        st.markdown(f"🔹 **{item}**") # اسم البند يظهر بوضوح وبخط عريض
+        
+        # اختيار النتيجة بشكل أفقي ومريح للأصابع
+        res = st.radio("النتيجة:", ["مطابق", "غير مطابق", "غير مطبق"], horizontal=True, key=f"r_{item}", label_visibility="collapsed")
+        
+        # خانة الملاحظات أسفل النتيجة مباشرة
+        note = st.text_input("الملاحظات:", placeholder="أضف ملاحظة للبند (اختياري)...", key=f"n_{item}")
+        
         t_results[item] = {"result": res, "note": note if note else "-"}
+        st.divider() # خط فاصل رمادي أنيق بين كل بند والآخر
 
 with tab2:
     st.subheader("إرفاق حتى 8 صور مع الوصف")
     photos = []
-    cols = st.columns(2)
     for i in range(1, 9):
-        with cols[i%2].expander(f"صورة رقم {i}"):
-            file = st.file_uploader(f"ارفع/التقط {i}", type=['jpg','png','jpeg'], key=f"f{i}")
-            desc = st.text_input(f"وصف الصورة {i}", key=f"d{i}")
-            if file: photos.append({"image": file, "desc": desc if desc else "-"})
+        with st.expander(f"📷 إرفاق صورة رقم {i}"):
+            file = st.file_uploader(f"ارفع أو التقط صورة", type=['jpg','png','jpeg'], key=f"f{i}")
+            desc = st.text_input(f"وصف الصورة (اختياري)", key=f"d{i}")
+            if file: 
+                st.image(file, use_column_width=True)
+                photos.append({"image": file, "desc": desc if desc else "-"})
 
 with tab3:
     st.subheader("الاعتماد النهائي")
@@ -159,7 +167,20 @@ with tab3:
     comm = st.text_area("تعليق المهندس العام")
     
     if st.button("✅ حفظ البيانات وإصدار التقرير", use_container_width=True):
-        update_db(proj, stage)
-        data = {"inspection_type": stage, "project": proj, "consultant": cons, "engineer": eng, "contractor": cont, "inspection_no": final_no, "date": dt, "general_checks": g_checks, "tech_checks": t_results, "photos": photos, "status": stat, "comments": comm}
-        doc_out = create_docx(data)
-        st.download_button("📥 تحميل التقرير (Word)", data=doc_out, file_name=f"{stage}_{final_no}.docx", use_container_width=True)
+        if not proj or not stage:
+            st.error("يرجى إدخال اسم المشروع أولاً")
+        else:
+            update_db(proj, stage)
+            data = {"inspection_type": stage, "project": proj, "consultant": cons, "engineer": eng, "contractor": cont, "inspection_no": final_no, "date": dt, "general_checks": g_checks, "tech_checks": t_results, "photos": photos, "status": stat, "comments": comm}
+            doc_out = create_docx(data)
+            
+            # التعديل الجديد: اسم الملف يشمل اسم الفحص واسم المشروع
+            safe_proj_name = proj.replace("/", "-") # لتجنب مشاكل الأسماء في الويندوز
+            file_name = f"{stage} - {safe_proj_name}.docx"
+            
+            st.download_button(
+                label="📥 تحميل التقرير (Word)", 
+                data=doc_out, 
+                file_name=file_name, 
+                use_container_width=True
+            )
