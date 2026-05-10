@@ -4,13 +4,44 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches
 from io import BytesIO
+import json
+import os
 
 # --- الإعدادات الأساسية للصفحة ---
-st.set_page_config(page_title="نظام الاستلامات الهندسية الشامل", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="نظام الاستلامات الهندسية", page_icon="🏗️", layout="wide")
 
 # ==========================================
-# قاعدة بيانات الاستلامات (مستخرجة من ملف الـ PDF)
-# يمكنك نسخ نفس التنسيق لإضافة المزيد من البنود لاحقاً
+# نظام قاعدة البيانات المبسط (لتتبع أرقام الاستلامات التلقائية)
+# ==========================================
+DB_FILE = "inspections_db.json"
+
+def load_db():
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_to_db(project, insp_type):
+    db = load_db()
+    if project not in db:
+        db[project] = {}
+    if insp_type not in db[project]:
+        db[project][insp_type] = 0
+    db[project][insp_type] += 1
+    
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False, indent=4)
+        
+    return db[project][insp_type]
+
+def get_next_number(project, insp_type):
+    if not project:
+        return 1
+    db = load_db()
+    return db.get(project, {}).get(insp_type, 0) + 1
+
+# ==========================================
+# قاعدة بيانات الاستلامات 
 # ==========================================
 INSPECTIONS_DATA = {
     "أعمال الحفر": [
@@ -18,93 +49,43 @@ INSPECTIONS_DATA = {
         "مراجعة إحداثيات حدود الحفر مع حدود المبنى طبقا لتقرير الجسات.",
         "مراجعة منسوب التأسيس مع اللوحات وعمق الحفر من تقرير التربة.",
         "مراجعة تطهير قاع وجوانب الحفر واستواء الحفر.",
-        "التأكد من أن نوع تربة قاع الحفر مطابقة لتقرير التربة ولا توجد اختلافات."
+        "التأكد من أن نوع تربة قاع الحفر مطابقة لتقرير التربة."
     ],
     "أعمال الإحلال": [
         "التأكد من منسوب طبقة الإحلال (منسوب التأسيس).",
         "التأكد من سمك طبقة الإحلال طبقاً لتوصيات الاستشاري.",
-        "التأكد من طريقة الدمك المستخدمة (ميكانيكي/ستاتيكي/هز) طبقا للمواصفات.",
-        "التأكد من الوزن المستخدم في الدمك.",
-        "التأكد من نتيجة اختبار الدمك قبل البدء في الطبقة التالية.",
-        "مطابقة طبقة الإحلال للعينة المعتمدة."
+        "التأكد من طريقة الدمك المستخدمة طبقا للمواصفات.",
+        "التأكد من نتيجة اختبار الدمك قبل البدء في الطبقة التالية."
     ],
     "فحص واستلام الخنزيرة": [
         "أبعاد الخنزيرة أكبر من أبعاد قاع الحفر بمسافة تمنع تأثرها.",
         "استقامة أضلاع الخنزيرة بخيط الشد.",
-        "تقوية الأضلاع بالخوابير أو الشكالات في حالة الارتفاع عن الأرض.",
         "أفقية الأضلاع بميزان المياه.",
-        "مراجعة أفقية اضلاع الخنزيرة عند أماكن الالتقاء.",
         "مراجعة الزوايا المحصورة بين الأضلاع (نظرية فيثاغورث).",
-        "التأكد من عدم حدوث أي حركة في زوايا الالتقاء بتقويتها جيدا.",
         "مراجعة المحاور على الخنزيرة."
-    ],
-    "القواعد الخرسانية العادية": [
-        "التأكد من نظافة منسوب التأسيس مع تمام دمك السطح.",
-        "رفع أركان القواعد بجهاز Total Station ومطابقتها مع الرسومات.",
-        "مطابقة المحاور الإنشائية وصحة توقيع زواياها.",
-        "مراجعة أبعاد القواعد وارتفاعاتها وحدود جوانبها.",
-        "التقفيل الجيد لجوانب القواعد مع بعضها وتسديد الفتحات.",
-        "مراجعة التقويات والتأكد من إتمامها بطريقة صحيحة.",
-        "التأكد من وضع شرب صب القواعد (منسوب الظهر) بميزان القامة."
-    ],
-    "القواعد الخرسانية المسلحة والسملات": [
-        "مراجعة أبعاد القواعد المسلحة والسملات.",
-        "التأكد من نظافة القوالب الخشبية من الداخل.",
-        "التأكد من دهان القوالب الخشبية بمادة مانعة للالتصاق.",
-        "مراجعة أماكن الفتحات ومسارات الصحي والكهرباء.",
-        "مراجعة التقويات (الزراجين والشكالات) لمنع الحركة أثناء الصب."
-    ],
-    "حديد تسليح الأساسات": [
-        "التأكد من أقطار وأعداد حديد التسليح ومطابقتها للمخططات.",
-        "التأكد من أطوال التراكب (الوصلات) وأماكنها.",
-        "مراجعة تربيط الحديد بالسلك المجلفن بشكل جيد.",
-        "مراجعة تركيب البسكويت (الغطاء الخرساني) بالسمك المطلوب.",
-        "التأكد من نظافة حديد التسليح من الصدأ أو الزيوت."
-    ],
-    "نجارة الأعمدة الخرسانية": [
-        "مراجعة قطاعات الأعمدة وأبعادها.",
-        "التأكد من رأسية الأعمدة باستخدام ميزان الخيط (البلبل).",
-        "مراجعة أماكن الأعمدة ومحاورها.",
-        "التأكد من متانة التقويات (الأحزمة والزراجين).",
-        "التأكد من منسوب نهاية صب العمود."
-    ],
-    "إستلام أعمال المباني": [
-        "التأكد من عمل المدماك الأول بكامل الدور واسترباع الغرف.",
-        "التأكد من وضع قوالب الطوب للمدماك الأول على فرشة كاملة من المونة.",
-        "تحديد أماكن الفتحات (الأبواب والشبابيك) ووزن المباني أسفل الكمرات.",
-        "التأكد من ملء العراميس الطولية والعرضية بالمونة.",
-        "وزن المباني رأسياً بميزان الخيط وأفقياً بميزان المياه."
-    ],
-    "أعمال العزل المائي للأساسات": [
-        "التأكد من جفاف ونظافة الأسطح المراد عزلها وتنعيمها.",
-        "التأكد من عمل وزرة (رقبة زجاجة) من المونة في الزوايا.",
-        "مراجعة دهان طبقة الأساس (الأساس البارد/البرايمر) وتغطيتها السطح بالكامل.",
-        "التأكد من ركوب لفائف العزل (الرولات) على بعضها بالمسافة المطلوبة.",
-        "التأكد من لحام الوصلات جيدا وعدم وجود فراغات."
     ]
 }
 
-# --- دالة إنشاء ملف Word شامل الصور ---
+# --- دالة إنشاء ملف Word ---
 def create_docx(data):
     doc = Document()
-    
-    # تنسيق اتجاه النص من اليمين لليسار (اختياري حسب دعم المكتبة)
-    style = doc.styles['Normal']
-    font = style.font
-    font.name = 'Arial'
     
     heading = doc.add_heading(f"نموذج فحص واستلام - {data['inspection_type']}", level=1)
     heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # بيانات المشروع الأساسية
+    # البيانات الأساسية (تمت إضافة الاستشاري والمهندس)
     doc.add_heading('البيانات الأساسية:', level=2)
     p = doc.add_paragraph()
     p.add_run(f"المشروع: ").bold = True
     p.add_run(f"{data['project']}\n")
+    p.add_run(f"الاستشاري: ").bold = True
+    p.add_run(f"{data['consultant']}\n")
     p.add_run(f"رقم طلب الاستلام: ").bold = True
     p.add_run(f"{data['inspection_no']}\n")
     p.add_run(f"التاريخ: ").bold = True
     p.add_run(f"{data['date']}\n")
+    p.add_run(f"المهندس المستلم: ").bold = True
+    p.add_run(f"{data['engineer']}\n")
     p.add_run(f"مندوب المقاول: ").bold = True
     p.add_run(f"{data['contractor']}\n")
 
@@ -119,74 +100,75 @@ def create_docx(data):
         row[0].text = key
         row[1].text = "تم" if value else "غير مطبق"
 
-    # جدول الفحص الفني
+    # جدول الفحص الفني (3 أعمدة: البند - النتيجة - الملاحظات)
     doc.add_heading('بنود المراجعة الفنية:', level=2)
-    t2 = doc.add_table(rows=1, cols=2)
+    t2 = doc.add_table(rows=1, cols=3)
     t2.style = 'Table Grid'
-    t2.rows[0].cells[0].text = 'بند المراجعة'
+    t2.rows[0].cells[0].text = 'البند'
     t2.rows[0].cells[1].text = 'النتيجة'
+    t2.rows[0].cells[2].text = 'الملاحظات'
+    
     for key, value in data['tech_checks'].items():
         row = t2.add_row().cells
         row[0].text = key
-        row[1].text = value
+        row[1].text = value['result']
+        row[2].text = value['note'] # الملاحظة الخاصة بالبند
 
     # التقييم النهائي
-    doc.add_heading('النتيجة والملاحظات:', level=2)
+    doc.add_heading('النتيجة والملاحظات العامة:', level=2)
     doc.add_paragraph(f"التقييم النهائي: {data['status']}")
-    doc.add_paragraph(f"ملاحظات المهندس: {data['comments']}")
+    doc.add_paragraph(f"ملاحظات عامة: {data['comments']}")
 
-    # إضافة الصور إن وجدت
+    # إضافة الصور
     if data['photos']:
         doc.add_page_break()
-        doc.add_heading('توثيق الموقع (الصور والملاحظات):', level=1)
+        doc.add_heading('توثيق الموقع (الصور):', level=1)
         for idx, photo_data in enumerate(data['photos']):
             try:
-                # قراءة الصورة من الذاكرة
                 image_stream = BytesIO(photo_data['image'].getvalue())
-                # إضافة الصورة للتقرير بعرض مناسب
                 doc.add_picture(image_stream, width=Inches(4.5))
-                # إضافة وصف الصورة
                 p_desc = doc.add_paragraph()
-                p_desc.add_run(f"صورة رقم ({idx+1}): ").bold = True
+                p_desc.add_run(f"صورة ({idx+1}): ").bold = True
                 p_desc.add_run(photo_data['desc'])
-                doc.add_paragraph("\n") # فاصل بين الصور
-            except Exception as e:
-                doc.add_paragraph(f"تعذر إدراج الصورة رقم {idx+1}")
+                doc.add_paragraph("\n")
+            except Exception:
+                pass
 
     target = BytesIO()
     doc.save(target)
     return target.getvalue()
 
 # --- واجهة المستخدم (UI) ---
-st.title("🏗️ نظام الاستلامات الهندسية (المتكامل)")
+st.title("🏗️ نظام الاستلامات الهندسية الاحترافي")
 
-# القائمة الجانبية
+# القائمة الجانبية (تمت إضافة حقول الاستشاري والمهندس)
 with st.sidebar:
     st.header("📋 بيانات الطلب")
-    project_name = st.text_input("اسم المشروع")
-    insp_no = st.text_input("رقم طلب الاستلام")
-    contractor = st.text_input("اسم المقاول / المندوب")
+    project_name = st.text_input("اسم المشروع", "مشروع ادوار الحداثة")
+    consultant_name = st.text_input("اسم الاستشاري", "محرم باخوم")
+    engineer_name = st.text_input("المهندس المستلم (اسمك)")
+    contractor_name = st.text_input("اسم المقاول / المندوب")
     date_str = st.date_input("تاريخ الفحص", datetime.now()).strftime('%Y-%m-%d')
 
 # اختيار نوع الاستلام
 st.markdown("### 🔍 اختر مرحلة الاستلام المراد فحصها:")
-selected_inspection = st.selectbox(
-    "قائمة الاستلامات المتاحة:", 
-    list(INSPECTIONS_DATA.keys())
-)
+selected_inspection = st.selectbox("قائمة الاستلامات المتاحة:", list(INSPECTIONS_DATA.keys()))
+
+# حساب وعرض رقم الاستلام التلقائي
+auto_insp_num = get_next_number(project_name, selected_inspection)
+st.info(f"🔢 رقم الاستلام التلقائي المقترح لهذه المرحلة في هذا المشروع هو: **{auto_insp_num}**")
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4 = st.tabs(["📋 المراجعة الإدارية", "🛠️ الفحص الفني", "📸 التوثيق والصور", "✅ الاعتماد والتقرير"])
+tab1, tab2, tab3, tab4 = st.tabs(["📋 المراجعة الإدارية", "🛠️ الفحص الفني (والملاحظات)", "📸 الصور", "✅ الاعتماد"])
 
 with tab1:
     st.subheader("تحقق ما قبل الاستلام")
     g_checks = {
-        "التأكد من اعتماد المواد المستخدمة في البند": st.checkbox("اعتماد المواد", value=True),
-        "التأكد من اعتماد رسومات الورشة (Shop Drawings)": st.checkbox("اعتماد المخططات التنفيذية", value=True),
-        "التأكد من اعتماد طريقة التنفيذ (Method Statement)": st.checkbox("اعتماد طريقة التنفيذ"),
-        "توافر شروط السلامة المهنية بالموقع": st.checkbox("شروط السلامة والأمان"),
-        "التأكد من إزالة المخلفات الناتجة عن التنفيذ": st.checkbox("إزالة المخلفات")
+        "اعتماد المواد المستخدمة في البند": st.checkbox("اعتماد المواد", value=True),
+        "اعتماد رسومات الورشة (Shop Drawings)": st.checkbox("اعتماد المخططات التنفيذية", value=True),
+        "اعتماد طريقة التنفيذ (Method Statement)": st.checkbox("اعتماد طريقة التنفيذ"),
+        "توافر شروط السلامة المهنية بالموقع": st.checkbox("شروط السلامة والأمان")
     }
 
 with tab2:
@@ -195,31 +177,36 @@ with tab2:
     
     t_results = {}
     for item in current_tech_items:
-        # استخدام st.radio كبديل أفضل للموبايل للمطابقة
-        t_results[item] = st.radio(item, ["مطابق", "غير مطابق", "غير مطبق"], horizontal=True, key=item)
+        st.markdown(f"🔹 **{item}**")
+        # النتيجة
+        res = st.radio("النتيجة:", ["مطابق", "غير مطابق", "غير مطبق"], horizontal=True, key=f"r_{item}", label_visibility="collapsed")
+        # حقل الملاحظة الخاص بالبند
+        note = st.text_input("ملاحظة على البند:", key=f"n_{item}", placeholder="اكتب ملاحظة إن وجدت...", label_visibility="collapsed")
+        
+        # حفظ النتيجة والملاحظة معاً كقاموس
+        t_results[item] = {"result": res, "note": note if note else "-"}
+        st.markdown("---")
 
 with tab3:
-    st.subheader("إرفاق الصور والملاحظات (اختياري - حتى 8 صور)")
-    st.info("يمكنك التصوير المباشر من كاميرا الجوال أو رفع الصور من الاستديو، مع كتابة تعليق أسفل كل صورة ليظهر في التقرير.")
-    
+    st.subheader("إرفاق الصور والملاحظات (اختياري)")
     captured_photos = []
-    
-    # عرض خانات الصور في عمودين لتوفير مساحة الشاشة
     col1, col2 = st.columns(2)
-    
-    for i in range(1, 9):
+    for i in range(1, 5): # قللنا العدد لـ 4 للشكل العام، يمكنك زيادته لـ 8
         current_col = col1 if i % 2 != 0 else col2
         with current_col:
             with st.expander(f"📷 إرفاق صورة رقم {i}"):
                 img_file = st.file_uploader(f"اختر أو التقط صورة", type=['png', 'jpg', 'jpeg'], key=f"file_{i}")
                 img_desc = st.text_input(f"ملاحظة للصورة:", key=f"desc_{i}")
-                
                 if img_file is not None:
                     st.image(img_file, use_column_width=True)
-                    captured_photos.append({"image": img_file, "desc": img_desc if img_desc else "لا يوجد وصف"})
+                    captured_photos.append({"image": img_file, "desc": img_desc if img_desc else "-"})
 
 with tab4:
-    st.subheader("التقييم والاعتماد")
+    st.subheader("التقييم النهائي واعتماد التقرير")
+    
+    # خانة لتعديل رقم الاستلام يدوياً لو أراد المهندس تجاوزه الترقيم التلقائي
+    final_insp_no = st.text_input("رقم طلب الاستلام لاعتماده بالتقرير:", value=str(auto_insp_num))
+    
     final_status = st.radio("القرار النهائي للمهندس:", [
         "1 - لا توجد ملاحظات (يعتمد البند)",
         "2 - يعتمد مع تنفيذ الملاحظات",
@@ -230,15 +217,20 @@ with tab4:
     
     st.markdown("---")
     
-    if st.button("✅ إصدار التقرير (Word)", use_container_width=True):
-        if not insp_no or not project_name:
-            st.error("⚠️ يرجى إكمال 'اسم المشروع' و 'رقم الطلب' في القائمة الجانبية أولاً.")
+    if st.button("✅ حفظ وإصدار التقرير (Word)", use_container_width=True):
+        if not project_name or not engineer_name:
+            st.error("⚠️ يرجى كتابة 'اسم المشروع' و 'اسم المهندس المستلم' في القائمة الجانبية.")
         else:
+            # تحديث قاعدة البيانات وحفظ الرقم التلقائي الجديد
+            saved_no = save_to_db(project_name, selected_inspection)
+            
             form_data = {
                 "inspection_type": selected_inspection,
                 "project": project_name,
-                "inspection_no": insp_no,
-                "contractor": contractor,
+                "consultant": consultant_name,
+                "engineer": engineer_name,
+                "contractor": contractor_name,
+                "inspection_no": final_insp_no,
                 "date": date_str,
                 "general_checks": g_checks,
                 "tech_checks": t_results,
@@ -247,14 +239,14 @@ with tab4:
                 "comments": notes
             }
             
-            with st.spinner("جاري إنشاء التقرير ودمج الصور..."):
+            with st.spinner("جاري إنشاء التقرير..."):
                 doc_bytes = create_docx(form_data)
                 
-            st.success("🎉 تم تجهيز التقرير بنجاح!")
+            st.success(f"🎉 تم حفظ الاستلام برقم {saved_no} وتجهيز التقرير بنجاح!")
             st.download_button(
                 label="📥 اضغط هنا لتحميل تقرير Word الشامل",
                 data=doc_bytes,
-                file_name=f"Inspection_{selected_inspection}_{insp_no}.docx",
+                file_name=f"Inspection_{selected_inspection}_{final_insp_no}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 use_container_width=True
             )
